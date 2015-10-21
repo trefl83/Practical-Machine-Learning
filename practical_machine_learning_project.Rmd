@@ -1,0 +1,102 @@
+---
+title: "Practical Machine Learning Project"
+author: "trefl83"
+date: "October 21, 2015"
+output: 
+  html_document: 
+    highlight: kate
+    theme: cosmo
+---
+
+# Introduction
+
+The goal of this project is to predict the manner in which 6 people perform barbell lifts using data from accelerometers on the belt, forearm, arm, and dumbell. 
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. 
+
+# Data
+
+First step is to load the data into memory, and split it into 2 parts: training data (60% of cases) and testing data (20%).
+
+```{r, message=FALSE}
+library(caret)
+
+dataset <- read.csv("pml-training.csv", na.strings = c("NA", "#DIV/0!"))
+
+set.seed(666)
+
+in_training <- createDataPartition(dataset$classe, p = .6, list = FALSE)
+training <- dataset[in_training,]
+testing <- dataset[-in_training,]
+```
+
+# Data cleaning and feature selection
+
+The output variable has 5 different values and in the training dataset, the distribution is not problematic - each category has good representation.
+
+```{r, message=FALSE}
+library(knitr)
+kable(as.data.frame(table(classe=training$classe)))
+```
+
+We have 160 variables in the dataset, but many of them are not useful for modeling. We have 3 problems:
+1. variable X is a row index
+2. some variables have plenty of missing values
+3. some variables have variance close to zero.
+
+We will remove all of them from training dataset.
+
+```{r}
+# variables with very high missing values share
+na_pct <- colMeans(is.na(training))
+summary(na_pct)
+na_pct_index <- as.numeric(which(na_pct > .9))
+
+# variables with near zero variance
+near_zero_var_index <- nearZeroVar(training)
+
+# removing unnecessary variables
+remove_index <- c(1, na_pct_index, near_zero_var_index)
+training_cut <- training[, -remove_index]
+```
+
+# Modeling
+
+For purpose of modeling we used GBM method (gradient boosting machine).
+
+```{r}
+if(file.exists("mod_gbm.RData")) {
+    load("mod_gbm.RData")
+    } else {
+    mod_gbm <- train(classe ~ ., data=training_cut, method="gbm")
+    save(mod_gbm, file="mod_gbm.RData")
+    }
+```
+
+This model fits training data very well - we have accuracy 0.999.
+
+```{r, message=FALSE}
+confusionMatrix(predict(mod_gbm, training_cut), training_cut$classe)$overall[1]
+```
+
+But, can we be sure, that the model is not overfitting the training data? Let's see its performance on testing dataset.
+
+```{r}
+confusionMatrix(predict(mod_gbm, testing), testing$classe)
+```
+
+As we could expect, the accuracy is lower for testing dataset, but it is still very high (0.995). Also we have very high values of sensitivity and specificity in each class of output variable. We can be sure, that the model will predict with simillar accuracy on new data samples.
+
+# Predicting
+
+Let's make predictions for new data samples.
+
+```{r}
+test_cases <- read.csv("pml-testing.csv", na.strings = c("NA", "#DIV/0!"))
+predictions <- as.character(predict(mod_gbm, test_cases))
+predictions
+```
+
+# Summary
+
+We can predict the manner in which people perform barbell lifts with very high accuracy (0.995) using data from accelerometers.
